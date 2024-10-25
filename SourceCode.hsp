@@ -1,0 +1,707 @@
+//次やること
+/*
+*/
+#include "hgimg3.as"
+#include "select_menu.as"
+dmmini
+//#include "hspogg.as"
+screen 0,800,600,0,//1000,0
+randomize
+bmass=5//block_mass正方形のマスの数
+//celload "pictures/01form55.png",1 : bvol=7
+//celload "pictures/02form44.png",1 : bvol=9 : bmass=4
+//celload "pictures/03form44.png",1 : bvol=13 : bmass=4
+//celload "pictures/04form44.png",1 : bvol=7 : bmass=4//正規
+//celload "pictures/05form44.png",1 : bvol=3 : bmass=4
+//celload "pictures/tetetetetetetetge.png",1 : bvol=25 : bmass=4
+//celload "pictures/06form55.png",1 : bvol=18 : bmass=5
+celload "pictures/07form55.png",1 : bvol=36 : bmass=5
+celload "pictures/block_effect.png",2
+celload "pictures/player2.png",3
+//ブロック読み込みw
+celdiv 1,bmass,bmass//１００等分にする
+
+dmmload "sounds/ぶそぶそ.wav",1
+dmmload "sounds/Tetris2.ogg",1
+dmmload "sounds/nomaldrop.wav",2
+dmmload "sounds/harddrop.wav",3
+dmmload "sounds/explodedrop.wav",4
+dmmloop 1,0
+dmmplay 1
+
+dim form,bvol*4,bmass,bmass
+dim fcol,bvol*4,3
+dim fvmassv,bvol*4,4//form_void_mass_vol
+dim fstates,bvol*4,4//form_states
+dim fstates_lex,bvol*4,2//form_states_line_exist
+dim fstatesd,bvol*4,4,bmass//form_states_direction
+repeat bvol*4//形読み取り
+	pos 0,0 : celput 1,cnt
+	cc=0//color_check
+	acnt=cnt
+	fstates(acnt,0)=bmass-1//一番左のブロックの座標を保存
+	fstates(acnt,1)=bmass-1//上
+	fstates(acnt,2)=0//右
+	fstates(acnt,3)=0//下
+	repeat bmass//ブロックの位置情報を代入
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			pget xcnt,ycnt : gr=ginfo_r : gg=ginfo_g : gb=ginfo_b
+			if gr+gg+gb!255*3{
+				if cc=0 : fcol(acnt,0)=gr : fcol(acnt,1)=gg : fcol(acnt,2)=gb : cc=1//一番左上の色を取得
+				form(acnt,xcnt,ycnt)=1
+			}else{
+				form(acnt,xcnt,ycnt)=0
+			}
+			//if acnt<4 : logmes ""+acnt+"個めは"+form(acnt,xcnt,ycnt)
+		loop
+		
+	loop
+	repeat bmass//ブロック隣の空白マス数を取得
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if form(acnt,xcnt,ycnt)=1{
+				if xcnt=0 | form(acnt,limit(xcnt-1,0,bmass-1),ycnt)=0 : fvmassv(acnt,0)++//左
+				if ycnt=0 | form(acnt,xcnt,limit(ycnt-1,0,bmass-1))=0 : fvmassv(acnt,1)++//上
+				if xcnt=bmass-1 | form(acnt,limit(xcnt+1,0,bmass-1),ycnt)=0 : fvmassv(acnt,2)++//右
+				if ycnt=bmass-1 | form(acnt,xcnt,limit(ycnt+1,0,bmass-1))=0 : fvmassv(acnt,3)++//下
+				if xcnt<fstatesd(acnt,0,ycnt) : fstatesd(acnt,0,ycnt)=xcnt//左//方向ごとの一番端の位置
+				if ycnt<fstatesd(acnt,1,xcnt) : fstatesd(acnt,1,xcnt)=ycnt//上
+				if fstatesd(acnt,2,ycnt)<xcnt : fstatesd(acnt,2,ycnt)=xcnt//右
+				if fstatesd(acnt,3,xcnt)<ycnt : fstatesd(acnt,3,xcnt)=ycnt//下
+				if xcnt<fstates(acnt,0) : fstates(acnt,0)=xcnt//一番左の位置(fstatesdの最小)
+				if ycnt<fstates(acnt,1) : fstates(acnt,1)=ycnt//上(最小)
+				if fstates(acnt,2)<xcnt : fstates(acnt,2)=xcnt//右(最大)
+				if fstates(acnt,3)<ycnt : fstates(acnt,3)=ycnt//下(最大)
+				fstates_lex(acnt,0,ycnt)=1
+				fstates_lex(acnt,1,xcnt)=1
+			}
+		loop
+		
+	loop
+	if acnt=0// : repeat 4 : logmes fvmassv(0,cnt)  : loop
+loop
+*restart
+	title "TETRIS"
+/*:::::::::::::::::::::::::::::::テトリスの設定:::::::::::::::::::::::::::::*/
+//bsize=10//四角のサイズ
+//map_massx=25//マスの数
+//map_massy=50//マスの数
+bsize=20 : map_massx=10 : map_massy=25
+rspic 2,(double(bsize)/20),(double(bsize)/20) : gsel 0//画像サイズ変更
+celdiv 2,bsize*(double(bsize)/20),bsize*(double(bsize)/20)//画像分割
+sdownspeed=2//初期のスピード
+downspeed=sdownspeed//落下速度
+mapxs=250//map_x_startpoint
+mapys=50//map_y_startpoint
+mapsizex=bsize*map_massx//sizex
+mapsizey=bsize*map_massy//sizey
+dim map,map_massx+1,map_massy+1 : dim mapcol,map_massx+1,map_massy+1,3
+dim yline_clear,bmass : dim yline_clearc,bmass : dim xline_high,map_massx
+hsblock=-1//持ってない状態
+bsettime=20//ブロック設置してからの待機時間
+score=0
+
+/*::::::::::::::::::::::::::::::プレイヤーの設定:::::::::::::::::::::::::::::*/
+pxmovemax=4//最大に移動できる距離
+jump_max=10//最大ジャンプ力
+;プレイヤー周辺の空白ピクセルの数
+pvpleft=2//player_voidpixel_left
+pvpup=0//player_voidpixel_up
+pvpright=2//player_voidpixel_right
+pvpdown=0//player_voidpixel_down
+
+//ブロック選択
+	repeat bvol
+		ccnt=cnt//今代入したいやつ
+		repeat//ひたすら繰り返す
+			check=0
+			form_next_num(ccnt)=rnd(bvol)//新しく追加
+			repeat ccnt//今まで代入した分
+				if form_next_num(ccnt)=form_next_num(cnt) : check=1
+			loop
+			if check=0 : break
+		loop
+		//logmes form_next_num(ccnt)
+	loop
+	repeat bvol
+		ccnt=cnt+bvol//今代入したいやつ
+		repeat//ひたすら繰り返す
+			check=0
+			form_next_num(ccnt)=rnd(bvol)//新しく追加
+			repeat ccnt-bvol//今まで代入した分
+				if form_next_num(ccnt)=form_next_num(bvol+cnt) : check=1
+			loop
+			if check=0 : break
+		loop
+		//logmes form_next_num(ccnt)
+	loop
+	logmes 
+sblock=form_next_num(formcnt)*4//ランダムにブロックを選ぶ
+bx=int(map_massx-bmass/2)/2*bsize : by=(-bmass+fstates(sblock,1))*bsize
+px=int(map_massx-bmass/2)/2*bsize : py=0
+brotation=0 : bnum=sblock+(brotation\4)//block_num
+logmes "" : //repeat 4 : logmes fvmassv(0,cnt)  : loop
+*main
+	block_out=0
+	vs_nest=0
+	fholdc=0
+repeat
+	redraw 1 :redraw 0
+	gosub *back_draw
+	gosub *block_move
+	gosub *block_draw
+	gosub *player_draw
+	gosub *player_move
+
+	gosub *dot_draw
+	if vs_nest=1 : break
+	//logmes map(1,19)
+await 20
+loop
+
+if F1=1 : goto*restart
+if block_out=1 | pdcheck=2 : goto*gameover
+
+*back_draw
+	color 0,0,0 : boxf//黒で塗る
+	gradf mapxs,mapys,mapsizex,mapsizey,1,$AAAA44,$995511//後ろのグラデーション
+
+return
+*dot_draw
+	color 255,255,255
+	repeat map_massx-1//線を引く
+		xcnt=cnt+1
+		repeat map_massy
+			ycnt=cnt
+			line xcnt*bsize+mapxs,ycnt*bsize+mapys-1,xcnt*bsize+mapxs,ycnt*bsize+mapys
+		loop
+	loop
+return
+
+*block_move
+	//getkey 
+	getkey l_click,1 : getkey r_click,2
+	getkey tab,9 : getkey enter,13 : getkey shift,16 : getkey ctrl,17 : getkey pause,27
+	getkey space,32 : getkey lmoment,81 : getkey rmoment,69
+	getkey hidari,65 : getkey ue,87 : getkey migi,68 : getkey sita,83
+	getkey F1,112
+	if F1=1 : vs_nest=1
+	//control
+	
+	if tab=1 & tabp=0 & holdc=0{//ホールド
+		a=sblock//今落ちているformの初期状態
+		logmes a
+		if fholdc=1: gosub*block_option_set : hsblock=a : logmes "今のブロック"+sblock//ホールド中のブロックと今のブロックを入れ替える
+		if fholdc=0 : formcnt++ : gosub*block_option_set : hsblock=a : fholdc=1//hold_set_block//ホールド中のブロック番号//first_hold_check//最初のホールドかどうかを調べる
+		holdc=1 : tabp=1//連続でホールドできないように//おしっぱ禁止
+	}if tab=0 : tabp=0
+	if hidari=1 & ue=0{//左移動
+		blmcount++
+		if blmcount\4=0{
+			gosub *block_move_left
+			if blmc=fvmassv(bnum,0) : bx-bsize : bsettimec=0//左に移動
+		}
+	}if migi=1 & ue=0{//右移動
+		brmcount++
+		if brmcount\4=0{
+			gosub *block_move_right
+			if brmc=fvmassv(bnum,2) : bx+bsize : bsettimec=0//右に移動
+		}
+		//回転時の注意点、埋まったとき、一回でも動かせられれば回転できるとみなしている
+	}if lmoment=1 & lmomentp=0 & ue=0{//左回転！！
+	 	if brotation-1<0 : brotation=4
+	 	brotation--
+	 	b=bmass-1//一番左のブロックのx座標を保存する変数
+	 	c=0//一番右のブロックのx座標を保存する変数
+	 	d=0//一番上のy座標
+		repeat bmass
+			ycnt=cnt
+			repeat bmass
+				xcnt=cnt
+				if form(sblock+(brotation)\4,xcnt,ycnt)=1{
+					if xcnt<b : b=xcnt//一番左のブロックの位置
+					if c<xcnt : c=xcnt//一番右のブロックの位置
+					if d<ycnt : d=ycnt//一番下
+					mapx=limit(int((bx+bsize*xcnt)/bsize),0,map_massx-1) : mapy=limit(int((by+bsize*ycnt)/bsize),0,map_massy)
+					if map(mapx,mapy)=1 : brotationc=1//どっかにかぶってたらcheck=1
+						//logmes "y="+(by+d*bsize)
+					if bx+bsize*xcnt<=0 | mapsizex<=bx+bsize*xcnt | by+ycnt*bsize>=mapsizey : brotationc=1// : logmes "通った"//block_rotation_check
+				}
+			loop
+		loop
+		//logmes brotationc
+		if brotationc=1{
+			check=0
+			bnum=sblock+(brotation)\4
+			repeat bmass
+				mc=0
+				if bx+fstates(sblock+(brotation)\4,0)*bsize<=0 : gosub *block_move_right : if brmc=fvmassv(bnum,2) : logmes "必要"+(fvmassv(bnum,2))+"実際"+brmc: bx+bsize : check=1 : logmes "左に埋まったから右に移動" : logmes bx+b*bsize : mc=1//左に埋まってたら右に移動
+				if mc=0 & bx+fstates(sblock+(brotation)\4,2)*bsize>=mapsizex : gosub *block_move_left : if blmc=fvmassv(bnum,0) :logmes "必要"+(fvmassv(bnum,0))+"実際"+blmc : bx-bsize : check=1 : logmes "右に埋まったから左に移動"//右に埋まってたら左に移動
+				if by+fstates(sblock+(brotation)\4,3)*bsize>=mapsizey : gosub *block_move_up : if bumc=fvmassv(bnum,1) : by-bsize : check=1 : logmes "下に埋まったから上に移動"//下にうまってたら上に移動
+			loop
+			if check=0 : brotation++//回転できなかった場合
+			bnum=sblock+(brotation)\4
+		}
+		if brotationc=0 | check=1{//回転できた場合
+			bnum=sblock+(brotation\4)
+			bsettimec=0
+		}
+		//logmes brotation
+		lmomentp=1 : brotationc=0
+	}if lmoment=0 : lmomentp=0
+	
+	if rmoment=1 & rmomentp=0 & ue=0{//右回転！！
+	 	brotation++
+		repeat bmass
+			ycnt=cnt
+			repeat bmass
+				xcnt=cnt
+				//logmes sblock+(brotation)\4
+				if form(sblock+(brotation)\4,xcnt,ycnt)=1{
+					if xcnt<b : b=xcnt//一番左のブロックの位置
+					if c<xcnt : c=xcnt//一番右のブロックの位置
+					if d<ycnt : d=ycnt//一番下
+					mapx=limit(int((bx+bsize*xcnt)/bsize),0,map_massx-1) : mapy=limit(int((by+bsize*ycnt)/bsize),0,map_massy)
+					if map(mapx,mapy)=1 : brotationc=1
+					//logmes "回転後のx座標="+(bx+bsize*xcnt)
+					if bx+bsize*xcnt<=0 | mapsizex<=bx+bsize*xcnt | by+d*bsize>=mapsizey : brotationc=1// : logmes "通った"//block_rotation_check
+				}
+			loop
+		loop
+		if brotationc=1{
+			bnum=sblock+(brotation)\4
+			check=0
+			repeat bmass
+				mc=0
+				if bx+fstates(sblock+(brotation)\4,0)*bsize<=0 : gosub *block_move_right : if brmc=fvmassv(bnum,2) : bx+bsize : check=1 : logmes "左に埋まったから右に移動" : logmes bx+b*bsize : mc=1//左に埋まってたら右に移動
+				if mc=0 & bx+fstates(sblock+(brotation)\4,2)*bsize>=mapsizex : gosub *block_move_left : if blmc=fvmassv(bnum,0) : bx-bsize : check=1 : logmes "右に埋まったから左に移動"//右に埋まってたら左に移動
+				if by+fstates(sblock+(brotation)\4,3)*bsize>=mapsizey : gosub *block_move_up : if bumc=fvmassv(bnum,1) : by-bsize : check=1 : logmes "下に埋まったから上に移動"//下にうまってたら上に移動
+			loop
+			if check=0 : brotation--//回転できなかった場合
+			bnum=sblock+(brotation)\4
+		}
+		if brotationc=0 | check=1{//回転できた場合
+			bnum=sblock+(brotation\4)
+			bsettimec=0
+		}
+		//logmes brotation
+		rmomentp=1 : brotationc=0
+	}if rmoment=0 : rmomentp=0
+	//land
+	gosub *block_move_down
+	if bdmc=fvmassv(bnum,3) : downspeed=sdownspeed : blcolr=0 : blcolg=0 : blcolb=0//下にブロックがなければスピードを初期に戻す
+	if bdmc<fvmassv(bnum,3){//床についたまたはブロックが下にあったら
+		downspeed=0//止める
+		bsettimec++
+		blcolr=100 : blcolg=100 : blcolb=100//ブロックの枠の色
+		if bsettimec\bsettime=0{//落ちてから一定時間たったら
+			if ue=0 : dmmplay 2//音をならす
+			if ue=1 : dmmplay 3
+			gosub *block_set//今落ち切ったブロックを保存する
+			gosub *pdeath_check
+			formcnt++//次のformへ
+			gosub *block_option_set//初期座標とかの設定
+			dmmplay 
+			holdc=0
+		}
+	}if sita=0 : by+downspeed : else : by+downspeed*4
+
+	check=0 : aiueo=0
+	repeat//クッソ重いver
+		yycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if fstates_lex(bnum,1,xcnt)=1{
+				mapx=limit(int((bx+xcnt*bsize)/bsize),0,map_massx) : mapy=limit(int(by/bsize)+fstatesd(bnum,3,xcnt)+1+yycnt,0,map_massy)
+				//logmes "x="+mapx : logmes "y="+mapy
+				if map(mapx,mapy)=1 | mapy>=map_massy : check=1
+			}
+		loop
+		if check=1 : break
+	loop
+	repeat bmass//おかれる予定の位置を描画
+		ycnt=cnt
+		//logmes ycnt
+		repeat bmass
+			xcnt=cnt
+			mapx=int((bx+xcnt*bsize)/bsize) : mapy=int(by/bsize)+yycnt+ycnt
+			//color fcol(sblock,0),fcol(sblock,1),fcol(sblock,2)
+			color 0,0,0
+			if form(bnum,xcnt,ycnt)=1{
+				ggsquare 100,mapx*bsize+mapxs,mapy*bsize+mapys,(mapx+1)*bsize+mapxs-1,(mapy+1)*bsize+mapys-1
+				color 0,0,0 : boxline mapx*bsize+mapxs,mapy*bsize+mapys,(mapx+1)*bsize+mapxs-1,(mapy+1)*bsize+mapys-1,0
+			}
+		loop
+	loop
+	if ue=1 & uep=0{//ハードドロップする
+		by=limit(int(by/bsize)+yycnt,0,map_massy)*bsize : uep=1 : bsettimec=bsettime-1
+	}if ue=0 : uep=0
+
+	//今動かしているやつを描画
+	aiueo=0
+	repeat bmass
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if form(bnum,xcnt,ycnt)=1 & int((by+ycnt*bsize)/bsize)*bsize>=0{
+				color fcol(sblock,0),fcol(sblock,1),fcol(sblock,2)
+				//logmes "bof="+(int((bx+xcnt*bsize)/bsize)*bsize+mapxs)
+				boxf int((bx+xcnt*bsize)/bsize)*bsize+mapxs,int((by+ycnt*bsize)/bsize)*bsize+mapys,int((bx+(xcnt+1)*bsize)/bsize)*bsize+mapxs-1,int((by+(ycnt+1)*bsize)/bsize)*bsize+mapys-1
+				color blcolr,blcolg,blcolb : boxline int((bx+xcnt*bsize)/bsize)*bsize+mapxs,int((by+ycnt*bsize)/bsize)*bsize+mapys,int((bx+(xcnt+1)*bsize)/bsize)*bsize+mapxs-1,int((by+(ycnt+1)*bsize)/bsize)*bsize+mapys-1,0
+				if by+bsize*ycnt>=0 : color 243,0,255 : gmode 4,,,150 : pos int((bx+xcnt*bsize)/bsize)*bsize+mapxs,int((by+ycnt*bsize)/bsize)*bsize+mapys : celput 2,0//logmes "x="+xcnt+" y="+ycnt+" y座標は"+(int((by+ycnt*bsize)/bsize)*bsize)
+			}
+		loop
+	loop
+return
+*block_set
+	repeat bmass
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			mapx=int((bx+bsize*xcnt)/bsize) : mapy=int((by+bsize*ycnt)/bsize)
+			//logmes "x="+bx+"  mapx="+mapx+"  y="+by+"  mapy="+mapy
+			if form(bnum,xcnt,ycnt)=1{
+				//logmes "x="+(bx)+"mapx="+mapx
+				if 0<=mapx & mapx<map_massx & 0<=mapy & mapy<map_massy{
+					if map(mapx,mapy)=1 : vs_nest=1 : block_out=1
+					map(mapx,mapy)=1//ブロックをマップに追加
+					repeat 3 : mapcol(mapx,mapy,cnt)=fcol(sblock,cnt) : loop//色代入
+					//if xline_high(xcnt)<ycnt : xline_high(xcnt)=ycnt
+				}
+			}
+		loop
+	loop
+	//設置し終わったら消せるか確認
+	scorec=0
+	repeat bmass//ブロックのあった横列を調べる
+		check=0
+		yycnt=cnt
+		mapy=limit(int((by+bsize*yycnt)/bsize),0,map_massy)
+		//logmes mapy
+		repeat map_massx
+			xcnt=cnt
+			if map(xcnt,mapy)=1 : check++
+		loop
+		if check=map_massx{//一列全部そろってたら 
+			nyline=mapy//now_yline
+			repeat nyline-1
+				ycnt=nyline-cnt
+				//logmes ycnt
+				repeat map_massx
+					xcnt=cnt
+					map(xcnt,ycnt)=map(xcnt,ycnt-1)
+					repeat 3 : mapcol(xcnt,ycnt,cnt)=mapcol(xcnt,ycnt-1,cnt) : loop
+				loop
+			loop
+			yline_clear(yycnt)=mapy//y_line_clear
+			yline_clearc(yycnt)=20
+			scorec++
+			dmmplay 4
+		}
+		//logmes "check="+check
+	loop
+	if scorec!0 : score+=powf(2,9+scorec*2)//スコアを足す
+	
+		
+return
+
+*block_option_set
+	if formcnt=bvol : gosub *form_decide : formcnt=0//新しいブロックの一セットを作る
+	if tab=1 & tabp=0 {
+		if fholdc=1 : sblock=hsblock//もし、ホールドしていたら、今のとホールドしているブロックを入れ替える
+		if fholdc=0 : sblock=form_next_num(formcnt)*4
+	}
+	
+	if tab=0 : sblock=form_next_num(formcnt)*4//ランダムに一つのフォルムを選ぶ
+	//logmes "sblock"+sblock
+	downspeed=sdownspeed
+	brotation=0 : bnum=sblock+rotation\4
+	bx=int(map_massx-bmass/2)/2*bsize : by=(-bmass+fstates(sblock,1))*bsize
+return
+
+*block_draw
+	repeat map_massx//マップに設置してあるブロック描画
+		xcnt=cnt
+		repeat map_massy
+			ycnt=cnt
+			color mapcol(xcnt,ycnt,0),mapcol(xcnt,ycnt,1),mapcol(xcnt,ycnt,2)
+			if map(xcnt,ycnt)=1{
+				boxf xcnt*bsize+mapxs,ycnt*bsize+mapys,(xcnt+1)*bsize+mapxs-1,(ycnt+1)*bsize+mapys-1
+				color 0,0,0 : boxline xcnt*bsize+mapxs,ycnt*bsize+mapys,(xcnt+1)*bsize+mapxs-1,(ycnt+1)*bsize+mapys-1,0
+				if int((ycnt*bsize)/bsize)*bsize>=0 : color 243,0,255 : gmode 4,,,150 : pos int((xcnt*bsize)/bsize)*bsize+mapxs,int((ycnt*bsize)/bsize)*bsize+mapys : celput 2,0
+			}
+		loop
+	loop
+	
+	color 100,100,100 : boxf mapxs+mapsizex+20,mapys,mapxs+mapsizex+20+bsize*bmass,mapsy+bsize*limit(bvol-1,0,5)*bmass//次に来るブロック表示
+	repeat limit(bvol-1,0,5)
+		ccnt=cnt
+		repeat bmass
+			ycnt=cnt
+			repeat bmass
+				xcnt=cnt
+				a=ccnt+formcnt+1
+				if form(form_next_num(a)*4,xcnt,ycnt)=1{
+					color fcol(form_next_num(a)*4,0),fcol(form_next_num(a)*4,1),fcol(form_next_num(a)*4,2)
+					boxf mapxs+mapsizex+20+1+(bsize/2)*xcnt,mapys+(bsize/2)*(ycnt)+ccnt*(bsize/2*bmass+10)+1,mapxs+mapsizex+20+(bsize/2)*(xcnt+1),mapys+(bsize/2)*(ycnt+1)+ccnt*(bsize/2*bmass+10)
+				}
+			loop
+		loop
+	loop
+	
+	repeat bmass//ブロック一列消したときの演出
+		if yline_clearc(cnt)!0{//もし消したときの演出するなら～
+			color 255,50,0
+			ggsquare yline_clearc(cnt)*15,mapxs,mapys+yline_clear(cnt)*bsize,mapxs+mapsizex,mapys+(yline_clear(cnt)+1)*bsize-1
+			yline_clearc(cnt)--
+		}
+		//logmes (mapys+(yline_clear(cnt)+1)*bsize-1)
+	loop
+	
+	pos mapxs,mapys+mapsizey : color 255,255,255 : mes "score "+score//スコア表示
+
+	//ホールド中のブロック表示
+	if hsblock!-1{//何かホールドしてたら～
+		color fcol(hsblock,0),fcol(hsblock,1),fcol(hsblock,2)
+		repeat bmass
+			ycnt=cnt
+			repeat bmass
+				xcnt=cnt
+				if form(hsblock,xcnt,ycnt)=1{
+					boxf 20+1+xcnt*bsize/2,mapys+1+ycnt*bsize/2,20-1+(xcnt+1)*bsize/2,mapys-1+(ycnt+1)*bsize/2
+				}
+			loop
+		loop
+	}
+		
+return
+*block_move_left
+blmc=0//block_left_move_check
+a=bmass-1//左側の最小値を代入する（初期化）
+repeat bmass
+	ycnt=cnt
+	repeat bmass
+		xcnt=cnt
+			if form(bnum,xcnt,ycnt)=1{
+			if xcnt<a : a=xcnt
+			//logmes "x="+limit(int(bx/bsize)+xcnt-1,0,map_massx-1)+" y="+int(by/bsize+ycnt)
+			mapx=limit(int(bx/bsize)+xcnt-1,0,map_massx-1) : mapy=limit(int(by/bsize+ycnt),0,map_massy)
+			if map(mapx,mapy)=0{//マップ上隣にブロックがなかったら
+				if xcnt!0 : if form(bnum,xcnt-1,ycnt)=0 : blmc++//form上左にブロックがなかったら
+				if xcnt=0 : blmc++
+			}
+		}
+	loop
+loop
+if 0>bx+(a-1)*bsize : blmc=0//画面外に出れない
+return
+
+*block_move_right
+	brmc=0//block_right_move_check
+	a=0//左側の最大値（初期化）
+	repeat bmass
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if form(bnum,xcnt,ycnt)=1{
+				if xcnt>a : a=xcnt
+				//logmes "x="+limit(int(bx/bsize)+xcnt+1,0,map_massx-1)+" y="+int(by/bsize+ycnt)
+				mapx=limit(int(bx/bsize)+xcnt+1,0,map_massx) : mapy=limit(int(by/bsize+ycnt),0,map_massy)
+				if map(mapx,mapy)=0{
+					if xcnt!bmass-1 : if form(bnum,xcnt+1,ycnt)=0 : brmc++//右にブロックなかったら
+					if xcnt=bmass-1 : brmc++
+				}
+			}
+		loop
+	loop
+	if bx+(a+1)*bsize>=mapsizex : brmc=0//画面外に出れない
+return
+*block_move_up
+	a=bmass-1 : bumc=0//上側の最大値（初期化）
+	repeat bmass
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if form(bnum,xcnt,ycnt)=1{//一個下にマスがあるかを調べる
+				mapx=limit(int((bx+bsize*xcnt)/bsize),0,map_massx) : mapy=limit(int((by+bsize*ycnt)/bsize-1),0,map_massy)
+				if map(mapx,mapy)=0{
+					if ycnt!0 : if form(bnum,xcnt,ycnt-1)=0 : bumc++
+					if ycnt=0 : bumc++
+				}
+				if ycnt<a : a=ycnt
+			}
+		loop
+	loop
+	if 0>by+(a-1)*bsize : bumc=0
+	//logmes "bumc="+bumc
+return
+*block_move_down
+	a=0 : bdmc=0//下側の最大値（初期化）
+	repeat bmass
+		ycnt=cnt
+		repeat bmass
+			xcnt=cnt
+			if form(bnum,xcnt,ycnt)=1{//一個下にマスがあるかを調べる
+				mapx=limit(int((bx+bsize*xcnt)/bsize),0,map_massx) : mapy=limit(int((by+bsize*ycnt)/bsize+1),0,map_massy)
+				if map(mapx,mapy)=0{
+					if ycnt!bmass-1 : if form(bnum,xcnt,ycnt+1)=0 : bdmc++
+					if ycnt=bmass-1 : bdmc++
+				}
+				if a<ycnt : a=ycnt
+			}
+		loop
+	loop
+	if by+(a+1)*bsize>=mapsizey : bdmc=0
+return
+*form_decide
+	repeat bvol
+		ccnt=cnt+bvol//今代入したいやつ
+		form_next_num(ccnt-bvol)=form_next_num(ccnt)//引き継ぎ
+		repeat//ひたすら繰り返す
+			check=0
+			form_next_num(ccnt)=rnd(bvol)//新しく追加
+			repeat ccnt-bvol//今まで代入した分
+				if form_next_num(ccnt)=form_next_num(bvol+cnt) : check=1
+			loop
+			if check=0 : break
+		loop
+		//logmes form_next_num(ccnt)
+	loop
+return
+*player_draw
+	color 243,0,255 : gmode 4,,,255 : pos px+mapxs,py+mapys : celput 3
+	return
+*player_move
+	getkey phidari,37 : getkey pue,38 : getkey pmigi,39 : getkey psita,40
+	getkey pspace,32
+	;左右に移動
+	if phidari=1{
+		if -pxmovemax<pxmove : pxmove--
+	}
+	if pmigi=1{
+		if pxmove<pxmovemax : pxmove++//ブロックまたは壁がなかったら移動可能
+	}
+	/*if (phidari=1 & pmigi=1) | (phidari=0 & pmigi=0){
+	}*/
+	if pxmove<0{
+		if phidari=0 : pxmove+1
+		pmbc 0,pxmove//左のブロック数を調べる
+		check=stat
+		//logmes "左向きのブロックや壁="+check
+		if check!0 | px+pxmove-1<0 : pxmove=0//画面外に出るかブロックで埋まっていたら
+		//logmes "pxmove="+pxmove
+	}
+	if pxmove>0{
+		if pmigi=0 : pxmove-1
+		pmbc 2,pxmove//右のブロックを調べる
+		check=stat
+		//logmes "右向きのブロックや壁="+check
+		if check!0 | mapsizex-bsize<px+pxmove : pxmove=0
+		//logmes "pxmove="+pxmove
+	}
+	px=px+pxmove
+
+	jump_cnt=limit(jump_cnt,-jump_max,10)//調整
+	;ジャンプさせる
+	if pspace=1 & pspacep=0 & jump_cntc!3 : jump_cnt=-jump_max : pspacep=1 : jump_cntc++ : logmes "jump_cnt="+jump_cnt
+	if pspace=0 : pspacep=0
+	
+	;重力をチェック
+	pmbc 3,0 : check=stat//下を調べる
+	if check=0 & py+bmass*2<mapsizey & jump_cnt<10 : jump_cnt++
+	//logmes py+bmass*2+jump_cnt
+	
+	
+	;上下に移動するとき、の動きを制御
+	repeat abs(jump_cnt)
+		if jump_cnt<0{//上昇時
+			pmbc 1,0,1 : check=stat
+			if check>0 : jump_cnt=0
+			if check=0 : py-1
+		}
+		if jump_cnt>=0{//落下中
+			pmbc 3,0,1 : check=stat
+			if check>0 : jump_cnt=0 : jump_cntc=0 : break
+			if check=0 : py+1
+		}
+	loop
+	
+	return
+*pdeath_check
+	pdcheck=0// : ppp=1
+	logmes "上" : pmbc 1,0,1 : check=stat : if check>0 : pdcheck++
+	logmes "下"  : pmbc 3,0,1 : check=stat : if check>0 : pdcheck++
+	if pdcheck=2 : vs_nest=1
+	ppp=0
+	return
+*gameover
+	title "gameover"
+	repeat
+	redraw 1 : redraw 0
+		getkey enter,13
+		if enter=1 : break
+		await 16
+	loop
+	goto*restart
+
+#deffunc pmbc int player_move_block_check, int void_pixel_vol, int floar_wall_ceiling_check//player_move_check
+	pmc=player_move_block_check//向いている方向を代入
+	vpv=void_pixel_vol//どれだけ判定を縮めるか
+	fwccheck=floar_wall_ceiling_check
+	returns=0
+	color 255,0,0
+	if pmc=0{//左
+		repeat bsize-pvpup-pvpdown//縦一ピクセル分
+			ycnt=cnt
+			mapx=int((px+pvpleft+vpv+1)/bsize) : mapy=int((py+ycnt+pvpup)/bsize)//調べたいマス
+			if map(mapx,mapy)=1 : returns++//もしブロックがあったら
+			fmapx=mapx-bx/bsize : fmapy=mapy-by/bsize//今いる自分の位置と移動中のブロックとの距離
+			if 0<=fmapx & fmapx<bmass & 0<=fmapy & fmapy<bmass :  if form(bnum,fmapx,fmapy)=1 : returns++//移動中のブロックと被っていたら
+			if fwccheck=1 & px+pvpleft+vpv<0 : returns++//頭を壁にぶつけたら
+			if ppp=1 : logmes "mapx="+mapy+" mapy="+mapy : 
+			//pset mapxs+px+pvpleft+vpv+1,mapys+py+ycnt+pvpup//当たり判定表示
+		loop
+	}
+	if pmc=1{//上
+		repeat bsize-pvpleft-pvpright//両端1ピクセルぬいた横一ピクセル分
+			xcnt=cnt
+			mapx=int((px+pvpleft+vpv+xcnt+1)/bsize) : mapy=int((py+pvpup-vpv)/bsize)//調べたいマス
+			if map(mapx,mapy)=1 : returns++
+			//logmes mapy-by/bsize
+			fmapx=mapx-bx/bsize : fmapy=mapy-by/bsize//今いる自分の位置と移動中のブロックとの距離
+			if 0<=fmapx & fmapx<bmass & 0<=fmapy & fmapy<bmass :  if form(bnum,fmapx,fmapy)=1 : returns++//移動中のブロックと被っていたら
+			if fwccheck=1 &  py+pvpup-vpv<0 : returns++
+			if ppp=1 : logmes "mapx="+mapy+" mapy="+mapy : 
+			//pset mapxs+px+pvpleft+vpv+xcnt-1,mapys+py+pvpup-vpv//当たり判定表示
+		loop
+		logmes "うえ　="+returns
+	}
+	if pmc=2{//右
+		repeat bsize-pvpup-pvpdown//縦一ピクセル分
+			ycnt=cnt
+			mapx=int((px+bsize-pvpright+vpv)/bsize) : mapy=int((py+ycnt+pvpup)/bsize)//調べたいマス
+			if map(mapx,mapy)=1 : returns++//もしブロックがあったら
+			fmapx=mapx-bx/bsize : fmapy=mapy-by/bsize//今いる自分の位置と移動中のブロックとの距離
+			if 0<=fmapx & fmapx<bmass & 0<=fmapy & fmapy<bmass :  if form(bnum,fmapx,fmapy)=1 : returns++//移動中のブロックと被っていたら
+			if fwccheck=1 &  px+bsize-pvpright+vpv>mapsizex
+			if ppp=1 : logmes "mapx="+mapy+" mapy="+mapy : 
+			//pset mapxs+px+bsize-pvpright+vpv,mapys+py+ycnt+pvpup//当たり判定表示
+		loop
+	}
+	if pmc=3{//下
+		repeat bsize-pvpleft-pvpright//両端1ピクセルぬいた横一ピクセル分
+			xcnt=cnt
+			mapx=int((px+pvpleft+vpv+xcnt+1)/bsize) : mapy=int((py+bsize-pvpdown+vpv)/bsize)//調べたいマス
+			if map(mapx,mapy)=1 : returns++
+			fmapx=mapx-bx/bsize : fmapy=mapy-by/bsize//今いる自分の位置と移動中のブロックとの距離
+			if 0<=fmapx & fmapx<bmass & 0<=fmapy & fmapy<bmass :  if form(bnum,fmapx,fmapy)=1 : returns++//移動中のブロックと被っていたら
+			if fwccheck=1 &  py+bsize-pvpdown>=mapsizey : returns++
+			if ppp=1 : logmes "mapx="+mapy+" mapy="+mapy : 
+			//pset mapxs+px+pvpleft+vpv+xcnt,mapys+py+bsize-pvpdown+vpv//当たり判定表示
+		loop
+		
+	}
+	return returns
